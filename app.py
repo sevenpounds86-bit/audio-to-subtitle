@@ -3,7 +3,7 @@ import whisper
 import re
 from datetime import timedelta
 import os
-from pydub import AudioSegment
+
 
 # 页面配置（更美观）
 st.set_page_config(page_title="音频转字幕工具", page_icon="🎙️", layout="wide")
