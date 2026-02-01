@@ -3,12 +3,29 @@ import whisper
 import re
 from datetime import timedelta
 import os
+import io
+import subprocess
 
-
-# 页面配置（更美观）
+# 页面配置
 st.set_page_config(page_title="音频转字幕工具", page_icon="🎙️", layout="wide")
 
-# ---------------------- 核心功能函数 ----------------------
+# ---------------------- 核心适配函数（解决ffmpeg/音频问题） ----------------------
+# 强制配置ffmpeg路径，适配Streamlit Cloud
+def setup_ffmpeg():
+    try:
+        # 检查ffmpeg是否存在，不存在则尝试安装
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # 适配Streamlit Cloud的ffmpeg路径
+        os.environ["PATH"] += ":/usr/bin:/usr/local/bin"
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+            return True
+        except:
+            st.error("⚠️ 系统缺少ffmpeg，无法处理音频！")
+            return False
+
 # 去除所有标点符号（中英文）
 def remove_punctuation(text):
     punctuation = r'[，。！？；：""''()（）[]【】、·~@#￥%…&*+-=《》<>/\\|{}^_`·,:;!"$%&()*+-/<=>?@[\]^_`{|}~]'
@@ -16,7 +33,7 @@ def remove_punctuation(text):
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
     return clean_text
 
-# 转换秒数为SRT标准时间格式（HH:MM:SS,mmm）
+# 转换秒数为SRT标准时间格式
 def format_time(seconds):
     try:
         td = timedelta(seconds=float(seconds))
@@ -27,7 +44,7 @@ def format_time(seconds):
     except:
         return "00:00:00,000"
 
-# 生成SRT字幕内容（支持双语）
+# 生成SRT字幕内容
 def generate_srt(segments, target_lang, source_texts=None, use_bilingual=False):
     srt_content = ""
     for idx, seg in enumerate(segments, 1):
@@ -43,15 +60,16 @@ def generate_srt(segments, target_lang, source_texts=None, use_bilingual=False):
             srt_content += f"{target_text}\n\n"
     return srt_content
 
-# 加载Whisper Large-v3模型（最好的模型，缓存避免重复加载）
+# 加载Whisper Small模型（适配免费版）
 @st.cache_resource
-def load_best_whisper_model():
-    # 换免费版能跑的模型（small，精度足够，内存占用小）
-    return whisper.load_model("small")
+def load_whisper_model():
+    setup_ffmpeg()
+    # 加载模型时指定CPU（避免GPU问题）
+    return whisper.load_model("small", device="cpu")
 
-# ---------------------- 页面交互 ----------------------
+# ---------------------- 主界面逻辑 ----------------------
 def main():
-    st.title("🎙️ 智能音频转字幕工具（Whisper Large-v3）")
+    st.title("🎙️ 智能音频转字幕工具（稳定版）")
     st.markdown("### 支持多语言识别、双语字幕、精准时间线")
     st.divider()
 
@@ -60,49 +78,48 @@ def main():
         st.subheader("⚙️ 配置项")
         target_language = st.selectbox(
             "目标字幕语言",
-            ["中文", "英文", "日语", "韩语", "法语", "西班牙语", "德语", "俄语"],
+            ["中文", "英文", "日语", "韩语", "法语", "西班牙语"],
             index=0,
             help="音频会自动识别并翻译成该语言"
         )
         use_bilingual = st.checkbox("生成双语字幕（源语言+目标语言）", value=False)
-        st.info("✅ 模型：Whisper Small（适配免费服务器，精度高）\n✅ 自动去除所有标点符号\n✅ 按语义分割字幕，精准对齐时间线")
+        st.info("✅ 适配免费服务器，稳定运行\n✅ 自动去除所有标点符号\n✅ 按语义分割字幕，精准对齐时间线")
 
     # 音频上传
-    audio_file = st.file_uploader("📤 上传音频文件（支持MP3/WAV/M4A/FLAC）", type=["mp3", "wav", "m4a", "flac"])
+    audio_file = st.file_uploader("📤 上传音频文件（仅支持MP3/WAV）", type=["mp3", "wav"])
     
-    if audio_file:
-        # 保存临时音频文件
-        temp_audio = f"temp_{audio_file.name}"
-        with open(temp_audio, "wb") as f:
-            f.write(audio_file.getbuffer())
+    if audio_file and setup_ffmpeg():
+        # 直接读取音频到内存（避免磁盘权限问题）
+        audio_bytes = audio_file.read()
+        audio_io = io.BytesIO(audio_bytes)
         
         # 音频预览
-        st.audio(temp_audio)
+        st.audio(audio_bytes, format=f"audio/{audio_file.name.split('.')[-1]}")
         st.divider()
 
-        # 加载模型（提示）
-        with st.spinner("🔧 加载最好的识别模型（首次加载需1-2分钟）..."):
-            model = load_best_whisper_model()
+        # 加载模型
+        with st.spinner("🔧 加载识别模型（首次加载需1分钟）..."):
+            model = load_whisper_model()
         
         # 识别+翻译（核心步骤）
-        with st.spinner(f"🎧 正在识别音频并翻译为{target_language}（音频越长，时间越久）..."):
-            # 语言映射（Whisper要求的代码）
+        with st.spinner(f"🎧 正在识别音频并翻译为{target_language}..."):
+            # 语言映射
             lang_map = {
                 "中文": "zh", "英文": "en", "日语": "ja", "韩语": "ko",
-                "法语": "fr", "西班牙语": "es", "德语": "de", "俄语": "ru"
+                "法语": "fr", "西班牙语": "es"
             }
-            # 识别+翻译
+            # 直接处理内存中的音频，不写磁盘
             result = model.transcribe(
-                temp_audio,
+                audio_io,
                 task="translate" if target_language != "中文" else "transcribe",
                 language=lang_map[target_language],
-                word_timestamps=False,  # 按语义分块（更符合字幕逻辑）
+                word_timestamps=False,
                 verbose=False
             )
         
         # 提取识别结果
         source_segments = [{"start": s["start"], "end": s["end"], "text": s["text"]} for s in result["segments"]]
-        target_segments = source_segments  # 翻译后的结果
+        target_segments = source_segments
         source_texts = [s["text"] for s in source_segments]
 
         # 字幕编辑区域
@@ -118,7 +135,7 @@ def main():
                 clean_text = remove_punctuation(seg["text"])
                 text = st.text_input(f"字幕 {idx+1}", value=clean_text, key=f"t_{idx}")
             
-            # 容错：防止时间输入错误
+            # 容错处理
             try:
                 start_float = float(start)
                 end_float = float(end)
@@ -141,10 +158,7 @@ def main():
         
         # 字幕预览
         st.subheader("👀 字幕预览")
-        st.text_area("SRT内容（可复制）", value=srt_content, height=300)
-        
-        # 删除临时文件（清理空间）
-        os.remove(temp_audio)
+        st.text_area("SRT内容", value=srt_content, height=300)
 
 if __name__ == "__main__":
     main()
