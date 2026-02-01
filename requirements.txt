@@ -1,4 +1,5 @@
-openai-whisper
-streamlit>=1.28.0
-python-dotenv
-ffmpeg-python
+openai-whisper==20231106
+streamlit==1.32.2
+python-dotenv==1.0.1
+torch==2.1.2
+ffmpeg-python==0.2.0
