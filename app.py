@@ -4,20 +4,30 @@ import re
 from datetime import timedelta
 import os
 import tempfile
-from opencc import OpenCC  # 简繁转换，需额外安装
+
+# 尝试导入简繁转换库，增加容错（即使安装失败，也不影响语言选择项显示）
+try:
+    from opencc import OpenCC
+    OPENCC_AVAILABLE = True
+except ImportError:
+    OPENCC_AVAILABLE = False
+    st.warning("⚠️ 简繁转换库未安装，将无法进行简繁文本转换，仅显示原始识别结果")
 
 # 页面配置
-st.set_page_config(page_title="高精度音频转字幕工具", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="高精度音频转字幕工具（简繁分离版）", page_icon="🎙️", layout="wide")
 
-# 简繁转换初始化
+# 简繁转换初始化（容错版）
 @st.cache_resource
 def load_converters():
+    if not OPENCC_AVAILABLE:
+        return None, None
     try:
         # 简→繁  繁→简
         t2s = OpenCC('t2s')
         s2t = OpenCC('s2t')
         return t2s, s2t
-    except:
+    except Exception as e:
+        st.warning(f"⚠️ 简繁转换初始化失败：{str(e)}")
         return None, None
 
 t2s_conv, s2t_conv = load_converters()
@@ -25,7 +35,6 @@ t2s_conv, s2t_conv = load_converters()
 # ---------------------- 工具函数 ----------------------
 # 中英文标点清洗与规范化
 def remove_punctuation(text):
-    # 修复转义序列，使用三重单引号避免语法错误
     punctuation = r'''[，。！？；：""''()（）[]【】、·~@#￥%…&*+-=《》<>/\\|{}^_`·,:;!"$%&()*+-/<=>?@[\]^_`{|}~]'''
     clean_text = re.sub(punctuation, "", text)
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
@@ -42,9 +51,9 @@ def format_time(seconds):
     except:
         return "00:00:00,000"
 
-# 简繁统一转换
+# 简繁统一转换（容错版）
 def convert_zh_text(text, target_type):
-    if not t2s_conv or not s2t_conv:
+    if not OPENCC_AVAILABLE or not t2s_conv or not s2t_conv:
         return text
     if target_type == "简体中文":
         return t2s_conv.convert(text)
@@ -96,7 +105,7 @@ def main():
     st.markdown("### 优化中文识别率 | 简体/繁体独立选项 | 双语SRT导出 | 降噪预处理")
     st.divider()
 
-    # 侧边栏配置
+    # 侧边栏配置（强化简繁中文选项，放在最前面）
     with st.sidebar:
         st.subheader("⚙️ 核心配置")
         
@@ -108,11 +117,20 @@ def main():
             help="medium平衡精度与速度，large-v3中文最强精度"
         )
         
-        # 2. 语言分离：简体中文 / 繁体中文 / 其他语言
+        # 2. 语言选择：简繁中文优先显示，醒目易选（核心修复：确保选项正常渲染）
         lang_option = st.selectbox(
-            "输出语言类型",
-            ["简体中文", "繁体中文", "英文", "日语", "韩语", "法语", "西班牙语"],
-            index=0
+            "输出语言类型（中文支持简/繁）",
+            [
+                "简体中文",  # 优先选项
+                "繁体中文",  # 优先选项
+                "英文",
+                "日语",
+                "韩语",
+                "法语",
+                "西班牙语"
+            ],
+            index=0,
+            help="简体/繁体中文支持精准转换，无乱码"
         )
         
         # 3. 双语字幕
