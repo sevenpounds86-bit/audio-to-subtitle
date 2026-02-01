@@ -46,7 +46,8 @@ def generate_srt(segments, target_lang, source_texts=None, use_bilingual=False):
 # 加载Whisper Large-v3模型（最好的模型，缓存避免重复加载）
 @st.cache_resource
 def load_best_whisper_model():
-    return whisper.load_model("large-v3")
+    # 换免费版能跑的模型（small，精度足够，内存占用小）
+    return whisper.load_model("small")
 
 # ---------------------- 页面交互 ----------------------
 def main():
@@ -64,7 +65,7 @@ def main():
             help="音频会自动识别并翻译成该语言"
         )
         use_bilingual = st.checkbox("生成双语字幕（源语言+目标语言）", value=False)
-        st.info("✅ 模型：Whisper Large-v3（目前最好的多语言语音识别模型）\n✅ 自动去除所有标点符号\n✅ 按语义分割字幕，精准对齐时间线")
+        st.info("✅ 模型：Whisper Small（适配免费服务器，精度高）\n✅ 自动去除所有标点符号\n✅ 按语义分割字幕，精准对齐时间线")
 
     # 音频上传
     audio_file = st.file_uploader("📤 上传音频文件（支持MP3/WAV/M4A/FLAC）", type=["mp3", "wav", "m4a", "flac"])
